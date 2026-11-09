@@ -23,7 +23,16 @@ USER_AGENT = 'netbox-ingest'
 
 
 class FetchError(Exception):
-    """A request failed for good (after retries)."""
+    """
+    A request failed for good (after retries). status is the HTTP status
+    when the server answered, and token is True when the failing request
+    was the OAuth2 token request.
+    """
+
+    def __init__(self, message, status=None, token=False):
+        super().__init__(message)
+        self.status = status
+        self.token = token
 
 
 def _capped(value, limit, default=None):
@@ -54,7 +63,11 @@ class RateLimiter:
 class Client:
     """One run's connection to one source."""
 
-    def __init__(self, source):
+    def __init__(self, source, secret=None):
+        """
+        secret replaces the source's stored secret, for testing a secret
+        typed into the form before it is saved.
+        """
         import requests
 
         self.source = source
@@ -71,7 +84,10 @@ class Client:
         self.max_retries = int(get_setting('max_retries'))
         self.max_pages = int(get_setting('max_pages'))
         self.allowed_hosts = list(get_setting('allowed_hosts') or [])
-        self.secret = get_secret(source) if source.auth_type != AuthTypeChoices.NONE else ''
+        if source.auth_type == AuthTypeChoices.NONE:
+            self.secret = ''
+        else:
+            self.secret = secret if secret is not None else get_secret(source)
         self.token = None
         self.stats = {'requests': 0, 'bytes': 0, 'pages': 0, 'retries': 0, 'errors': 0}
         self.stats_lock = threading.Lock()
@@ -102,11 +118,12 @@ class Client:
         response = self.session.post(self.source.token_url, data=data, timeout=self.timeout)
         self._count(len(response.content))
         if response.status_code >= 400:
-            raise FetchError(f'Token request failed: HTTP {response.status_code}')
+            raise FetchError(f'Token request failed: HTTP {response.status_code}',
+                             status=response.status_code, token=True)
         try:
             self.token = response.json()['access_token']
         except (ValueError, KeyError) as exc:
-            raise FetchError('The token response has no access_token.') from exc
+            raise FetchError('The token response has no access_token.', token=True) from exc
         return self.token
 
     # Helpers
@@ -180,11 +197,13 @@ class Client:
                 continue
             if status >= 400:
                 snippet = content[:200].decode(errors='replace').strip()
-                raise FetchError(f'{method} {self.redact(response.url)}: HTTP {status} {snippet}'.strip())
+                raise FetchError(f'{method} {self.redact(response.url)}: HTTP {status} {snippet}'.strip(),
+                                 status=status)
             try:
                 data = parsers.parse(self.source.format, content, response.encoding)
             except parsers.ParseError as exc:
-                raise FetchError(f'{self.redact(response.url)}: {exc}') from None
+                raise FetchError(f'{self.redact(response.url)}: {exc}', status=status) from None
+            response.size = len(content)
             return data, response
 
     @staticmethod

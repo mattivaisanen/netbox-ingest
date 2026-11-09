@@ -33,6 +33,13 @@ center from a CMDB, an operational state from any tool that has a REST API.
 - **Dry run and Apply**: a dry run shows every value that would change,
   current and new, side by side. Apply writes what the dry run showed, and
   skips anything someone changed in between.
+- **Live tests in the forms**: the source, mapping and field forms have a
+  test panel that works on the values being edited, before they are saved.
+  *Test Endpoint* shows the status, timing, size and first record of a
+  call; *Test Authentication* says whether the API accepts the credentials
+  (and whether it needs them at all); *Test Against Object* runs one NetBox
+  object through fetch, match and transform and shows what a run would
+  write into each field. Tests call the API but write nothing.
 - **Runs**: every run has a report: what was written, what was skipped and
   why, records that matched no object, objects with no record, failed
   requests.

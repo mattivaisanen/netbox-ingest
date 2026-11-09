@@ -1,0 +1,14 @@
+{% load i18n %}
+{% comment %}A live test's answer, swapped into the panel. Context: result, errors.{% endcomment %}
+{% if errors %}
+  <div class="alert alert-warning mb-0">
+    <i class="mdi mdi-alert"></i> {% trans "Fix these form values first:" %}
+    <ul class="mb-0">{% for label, message in errors %}<li><strong>{{ label }}:</strong> {{ message }}</li>{% endfor %}</ul>
+  </div>
+{% elif result.test == 'endpoint' %}
+  {% include 'netbox_ingest/livetest/endpoint.html' %}
+{% elif result.test == 'authentication' %}
+  {% include 'netbox_ingest/livetest/authentication.html' %}
+{% elif result.test == 'object' %}
+  {% include 'netbox_ingest/livetest/object.html' %}
+{% endif %}
