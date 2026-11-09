@@ -1,0 +1,45 @@
+{% load helpers %}
+{% load i18n %}
+{% comment %}Object test result (livetest.object_preview()). Context: result.{% endcomment %}
+{% if result.object %}
+  <table class="table table-hover attr-table">
+    <tr><th scope="row">{% trans "Object" %}</th><td>{{ result.object|linkify }}</td></tr>
+    <tr><th scope="row">{% trans "Key" %}</th><td><code>{{ result.key|placeholder }}</code></td></tr>
+    {% if result.seconds is not None %}<tr><th scope="row">{% trans "Fetch" %}</th><td>{% blocktrans count n=result.requests %}{{ n }} request{% plural %}{{ n }} requests{% endblocktrans %} &middot; {{ result.seconds }} s</td></tr>{% endif %}
+  </table>
+{% endif %}
+{% if result.error %}
+  <div class="alert alert-danger"><i class="mdi mdi-alert"></i> {{ result.error }}</div>
+{% endif %}
+{% if result.record %}
+  {% if result.fields %}
+    <table class="table table-sm table-hover">
+      <thead><tr>
+        <th>{% trans "Field" %}</th><th>{% trans "Value path" %}</th><th>{% trans "API value" %}</th>
+        <th>{% trans "Now in NetBox" %}</th><th>{% trans "Would become" %}</th><th>{% trans "Result" %}</th>
+      </tr></thead>
+      {% for f in result.fields %}
+        <tr>
+          <td><code>{{ f.target }}</code></td>
+          <td><code>{{ f.value_path }}</code></td>
+          <td class="text-break"><code>{{ f.raw|placeholder }}</code></td>
+          <td class="text-break"><code>{{ f.current|placeholder }}</code></td>
+          <td class="text-break"><code>{{ f.new|placeholder }}</code></td>
+          <td><span class="badge text-bg-{{ f.color|default:'secondary' }}">{{ f.label }}</span>{% if f.message %}<div class="small text-muted">{{ f.message }}</div>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="text-muted">{% trans "The mapping has no enabled fields yet. Save it and add fields to see the values a run would write." %}</p>
+  {% endif %}
+  <details>
+    <summary>{% trans "Matched record" %}</summary>
+    <pre class="border rounded p-2 mt-2" style="max-height: 30rem; overflow: auto">{{ result.record }}</pre>
+  </details>
+{% endif %}
+{% if result.log %}
+  <details class="mt-2">
+    <summary>{% trans "Log" %}</summary>
+    <ul class="small mb-0">{% for entry in result.log %}<li class="{% if entry.level == 'error' %}text-danger{% elif entry.level == 'warning' %}text-warning{% endif %}">{{ entry.message }}</li>{% endfor %}</ul>
+  </details>
+{% endif %}

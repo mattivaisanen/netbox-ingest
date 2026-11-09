@@ -1,0 +1,35 @@
+{% load helpers %}
+{% load i18n %}
+{% comment %}Endpoint test result (livetest.endpoint()). Context: result.{% endcomment %}
+{% if result.error %}
+  <div class="alert alert-danger"><i class="mdi mdi-alert"></i> {{ result.error }}</div>
+{% endif %}
+{% if result.url %}
+  <table class="table table-hover attr-table">
+    <tr><th scope="row">{% trans "URL" %}</th><td><code>{{ result.url }}</code>{% if result.redirected %} <span class="text-muted">({% trans "after redirects" %})</span>{% endif %}</td></tr>
+    <tr><th scope="row">{% trans "Status" %}</th><td><span class="badge text-bg-green">HTTP {{ result.status_code }}</span> &middot; {{ result.seconds }} s{% if result.size is not None %} &middot; {{ result.size|filesizeformat }}{% endif %}</td></tr>
+    {% if result.content_type %}<tr><th scope="row">{% trans "Content type" %}</th><td><code>{{ result.content_type }}</code></td></tr>{% endif %}
+    {% if result.lookup_count is not None %}<tr><th scope="row">{% trans "Lookup" %}</th><td>{% blocktrans with n=result.lookup_count %}{{ n }} records{% endblocktrans %}; {% trans "this key gives" %} <code>{{ result.lookup_value|placeholder }}</code></td></tr>{% endif %}
+    <tr><th scope="row">{% trans "Records" %}</th><td>{{ result.record_count }}{% if result.paging_note %} <span class="text-muted">({{ result.paging_note }})</span>{% endif %}
+      {% if result.records_warning %}<div class="text-warning">{{ result.records_warning }}</div>{% endif %}</td></tr>
+  </table>
+{% endif %}
+{% if result.sample %}
+<div class="row">
+  <div class="col col-12 col-xl-6">
+    <h3 class="h5">{% trans "First Record" %}</h3>
+    <pre class="border rounded p-2" style="max-height: 30rem; overflow: auto">{{ result.sample }}</pre>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <h3 class="h5">{% trans "Paths in the Record" %}</h3>
+    <div style="max-height: 30rem; overflow: auto">
+      <table class="table table-sm table-hover">
+        <tr><th>{% trans "Path" %}</th><th>{% trans "Value" %}</th></tr>
+        {% for path, value in result.paths %}
+          <tr><td><code class="user-select-all">{{ path }}</code></td><td class="text-break">{{ value|truncatechars:80 }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}

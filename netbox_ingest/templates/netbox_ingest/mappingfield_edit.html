@@ -1,0 +1,7 @@
+{% extends 'generic/object_edit.html' %}
+
+{% block content %}
+  {{ block.super }}
+  {% url 'plugins:netbox_ingest:mappingfield_livetest' as test_url %}
+  {% include 'netbox_ingest/livetest/panel.html' with kind='object' %}
+{% endblock content %}

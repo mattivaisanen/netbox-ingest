@@ -9,8 +9,8 @@ from django.test import TestCase
 
 from dcim.models import Site
 
-from netbox_ingest import engine, jsonpath, secrets
-from netbox_ingest.choices import ItemStatusChoices as S, RunStatusChoices, TransformChoices
+from netbox_ingest import engine, http, jsonpath, livetest, secrets
+from netbox_ingest.choices import AuthTypeChoices, ItemStatusChoices as S, RunStatusChoices, TransformChoices
 from netbox_ingest.models import Mapping, MappingField, Run, Source, WrittenValue
 
 
@@ -125,3 +125,51 @@ class RunTests(TestCase):
         self.assertEqual(run.items.get(object_id=self.alpha.pk).status, S.STALE)
         self.alpha.refresh_from_db()
         self.assertEqual(self.alpha.description, 'changed meanwhile')
+
+
+class LiveTestTests(TestCase):
+    """Live tests from the forms: clear verdicts, and never a write."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.alpha = Site.objects.create(name='Alpha', slug='alpha')
+        cls.source = Source.objects.create(name='live', url='https://api.invalid/sites', records_path='items',
+                                           auth_type=AuthTypeChoices.BEARER)
+        cls.mapping = Mapping.objects.create(
+            source=cls.source, name='sites', object_type=ContentType.objects.get_for_model(Site),
+            record_key_path='site', object_key_field='name',
+        )
+
+    def answer(self, with_token, without_token):
+        """Patches requests: the HTTP status with and without credentials (None = 200)."""
+        def request(client, url, params=None, body=None):
+            status = with_token if client.source.auth_type != AuthTypeChoices.NONE else without_token
+            if status:
+                raise http.FetchError(f'HTTP {status}', status=status)
+            return {'items': []}, FakeResponse(url)
+
+        return mock.patch('netbox_ingest.http.Client.request', request)
+
+    def test_authentication_verdicts(self):
+        with self.answer(401, 401):
+            result = livetest.authentication(self.source, secret='wrong')
+        self.assertIs(result['ok'], False)
+        self.assertIn('401', result['message'])
+        with self.answer(None, 401):
+            self.assertIs(livetest.authentication(self.source, secret='right')['ok'], True)
+        # Accepted, but the API answers anyone: no verdict on the credentials.
+        with self.answer(None, None):
+            self.assertIsNone(livetest.authentication(self.source, secret='any')['ok'])
+
+    def test_object_preview_writes_nothing(self):
+        field = MappingField(mapping=self.mapping, target='description', value_path='state')
+        obj, error = livetest.find_object(self.mapping, 'ALPHA')
+        self.assertEqual((obj, error), (self.alpha, ''))
+        with serve([{'site': 'alpha', 'state': 'online'}]):
+            result = livetest.object_preview(self.mapping, [field], obj, secret='x')
+        self.assertEqual(result['fields'][0]['status'], S.PLANNED)
+        self.assertEqual(result['fields'][0]['new'], '"online"')
+        self.alpha.refresh_from_db()
+        self.assertEqual(self.alpha.description, '')
+        self.assertFalse(WrittenValue.objects.exists())
+        self.assertFalse(Run.objects.exists())

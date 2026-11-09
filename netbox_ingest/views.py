@@ -1,6 +1,3 @@
-import json
-import time
-
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
@@ -12,10 +9,9 @@ from netbox.object_actions import AddObject, BulkDelete, DeleteObject, EditObjec
 from netbox.views import generic
 from utilities.views import ConditionalLoginRequiredMixin, register_model_view
 
-from . import engine, filtersets, forms, http, jobs, jsonpath, matching, tables
-from .choices import FetchModeChoices, ItemStatusChoices, RunStatusChoices, TriggerChoices
+from . import engine, filtersets, forms, jobs, livetest, tables
+from .choices import ItemStatusChoices, RunStatusChoices, TriggerChoices
 from .models import Mapping, MappingField, Run, Source, WrittenValue
-from .secrets import SecretError
 
 APP = 'netbox_ingest'
 
@@ -74,6 +70,8 @@ class SourceView(generic.ObjectView):
 class SourceEditView(generic.ObjectEditView):
     queryset = Source.objects.all()
     form = forms.SourceForm
+    # Adds the live test panel below the form.
+    template_name = 'netbox_ingest/source_edit.html'
 
 
 @register_model_view(Source, 'delete')
@@ -110,8 +108,9 @@ class SourceRunView(ConditionalLoginRequiredMixin, View):
 @register_model_view(Source, 'test')
 class SourceTestView(ConditionalLoginRequiredMixin, View):
     """
-    Calls the API once (first page only, nothing written) and shows the
-    response, so paths can be written against a real record.
+    Calls the saved source's API once (first page only, nothing written) and
+    shows the response, so paths can be written against a real record. The
+    edit form has the same test for unsaved values (LiveTestView).
     """
     template_name = 'netbox_ingest/source_test.html'
 
@@ -121,50 +120,9 @@ class SourceTestView(ConditionalLoginRequiredMixin, View):
             raise PermissionDenied
         key = request.GET.get('key', '').strip()
         context = {'object': source, 'key': key, 'tab': None}
-        per_object = source.fetch_mode == FetchModeChoices.PER_OBJECT
-        if per_object and not key and http.uses_placeholder(source.url + source.body, 'key'):
-            return render(request, self.template_name, context)
-        context.update(self.call(source, key))
+        if not (livetest.needs_key(source) and not key):
+            context['result'] = livetest.endpoint(source, key)
         return render(request, self.template_name, context)
-
-    @staticmethod
-    def call(source, key):
-        out = {}
-        client = None
-        try:
-            client = http.Client(source)
-            values = {'key': key, 'pk': ''}
-            if source.lookup_url:
-                pairs = engine.fetch_lookup(source, client, engine.Report(Run(pk=0)))
-                out['lookup_count'] = len(pairs)
-                mapping = source.mappings.filter(enabled=True).first() or Mapping(ignore_case=True)
-                found = engine.lookup_index(pairs, mapping).get(
-                    matching.make_key(key, ignore_case=mapping.ignore_case))
-                values['lookup'] = found
-                out['lookup_value'] = found
-            url = http.render_template(source.url, values) if source.fetch_mode == FetchModeChoices.PER_OBJECT \
-                else source.url
-            body = http.body_for(source)
-            if body is not None:
-                body = http.render_template(body, values, for_json=True)
-            started = time.monotonic()
-            data, response = client.request(url, body=body)
-            out['seconds'] = round(time.monotonic() - started, 2)
-            out['url'] = client.redact(response.url)
-            out['status_code'] = response.status_code
-            records = client.records_of(data, source.records_path)
-            out['record_count'] = len(records)
-            sample = records[0] if records else data
-            out['sample'] = json.dumps(sample, indent=2, default=str)[:20000]
-            out['paths'] = jsonpath.paths(sample)
-            if source.pagination != 'none':
-                out['paging_note'] = _('Only the first page was read.')
-        except (http.FetchError, SecretError) as exc:
-            out['error'] = str(exc)
-        finally:
-            if client is not None:
-                client.close()
-        return out
 
 
 #
@@ -230,6 +188,7 @@ def _list_url(model, params):
 class MappingEditView(generic.ObjectEditView):
     queryset = Mapping.objects.all()
     form = forms.MappingForm
+    template_name = 'netbox_ingest/mapping_edit.html'
 
 
 @register_model_view(Mapping, 'delete')
@@ -285,6 +244,7 @@ class MappingFieldView(generic.ObjectView):
 class MappingFieldEditView(generic.ObjectEditView):
     queryset = MappingField.objects.all()
     form = forms.MappingFieldForm
+    template_name = 'netbox_ingest/mappingfield_edit.html'
 
     def get_return_url(self, request, obj=None):
         if obj is not None and obj.pk and obj.mapping_id:
@@ -389,3 +349,135 @@ class RunApplyView(ConditionalLoginRequiredMixin, View):
         else:
             messages.info(request, _('Applying in the background; reload to see the result.'))
         return redirect(run.get_absolute_url())
+
+
+#
+# Live tests in the edit forms
+#
+
+class LiveTestView(ConditionalLoginRequiredMixin, View):
+    """
+    Runs a live test on the values in an edit form, saved or not, and
+    returns the result as an HTML fragment for the form's test panel.
+
+    The form's own POST data is bound to the form class, so the test sees
+    exactly what Save would store. Only the fields a test needs must be
+    valid: an error elsewhere (a duplicate name, say) does not stop it.
+    Nothing is saved.
+    """
+    model = None
+    form_class = None
+    #: Form fields whose errors stop the test.
+    needed = ()
+    template_name = 'netbox_ingest/livetest/result.html'
+
+    def dispatch(self, request, *args, **kwargs):
+        # The answer goes into the form's panel, so a refusal is shown there too.
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except PermissionDenied as exc:
+            return self.respond(request, errors=[(_('Permission'), str(exc) or _('You may not run this test.'))])
+
+    def bind(self, request):
+        """(instance, form) from the posted form values; checks permissions."""
+        meta = self.model._meta
+        if not request.user.has_perm(f'{APP}.run_source'):
+            raise PermissionDenied(_('Live tests call the API, which needs permission to run sources.'))
+        pk = request.POST.get('_test_pk')
+        if pk:
+            instance = get_object_or_404(self.model.objects.restrict(request.user, 'change'), pk=pk)
+        elif request.user.has_perm(f'{APP}.add_{meta.model_name}'):
+            instance = self.model()
+        else:
+            raise PermissionDenied
+        form = self.get_form(request, instance)
+        form.is_valid()
+        return instance, form
+
+    def get_form(self, request, instance):
+        return self.form_class(data=request.POST, instance=instance)
+
+    def form_errors(self, form):
+        """[(label, message)] for the errors that stop the test."""
+        errors = []
+        for name, messages_ in form.errors.items():
+            if name in self.needed:
+                label = form.fields[name].label if name in form.fields else name
+                errors.extend((label, message) for message in messages_)
+        return errors
+
+    def respond(self, request, result=None, errors=None):
+        return render(request, self.template_name, {'result': result or {}, 'errors': errors or []})
+
+    def object_test(self, request, mapping, fields):
+        obj, error = livetest.find_object(mapping, request.POST.get('_test_object', ''), request.user)
+        if obj is None:
+            return self.respond(request, {'test': 'object', 'error': error})
+        return self.respond(request, livetest.object_preview(mapping, fields, obj))
+
+
+class SourceLiveTestView(LiveTestView):
+    model = Source
+    form_class = forms.SourceForm
+    needed = (
+        'fetch_mode', 'method', 'url', 'body', 'headers', 'format', 'records_path', 'verify_tls', 'timeout',
+        'auth_type', 'auth_username', 'auth_name', 'secret', 'secret_env', 'token_url', 'oauth_scope',
+        'pagination', 'page_size', 'next_path', 'page_param', 'size_param', 'lookup_url', 'lookup_records_path',
+        'lookup_key_path', 'lookup_value_path',
+    )
+
+    def post(self, request):
+        source, form = self.bind(request)
+        errors = self.form_errors(form)
+        if errors:
+            return self.respond(request, errors=errors)
+        # A secret typed into the form is tested before it is stored. An
+        # environment variable wins over it, as it does when the source runs.
+        secret = None
+        if not source.secret_env:
+            if form.cleaned_data.get('secret'):
+                secret = form.cleaned_data['secret']
+            elif form.cleaned_data.get('clear_secret'):
+                secret = ''
+        key = request.POST.get('_test_key', '').strip()
+        if request.POST.get('_test') == 'auth':
+            return self.respond(request, livetest.authentication(source, key, secret))
+        return self.respond(request, livetest.endpoint(source, key, secret))
+
+
+class MappingLiveTestView(LiveTestView):
+    model = Mapping
+    form_class = forms.MappingForm
+    needed = ('source', 'object_type', 'object_filter', 'object_key_field', 'object_key_regex', 'record_key_path',
+              'record_key_regex', 'ignore_case')
+
+    def get_form(self, request, instance):
+        return self.form_class(data=request.POST, instance=instance, user=request.user)
+
+    def post(self, request):
+        mapping, form = self.bind(request)
+        errors = self.form_errors(form)
+        if errors:
+            return self.respond(request, errors=errors)
+        if not request.user.has_perm(f'{APP}.view_source') or \
+                not Source.objects.restrict(request.user, 'view').filter(pk=mapping.source_id).exists():
+            raise PermissionDenied
+        # The mapping's saved fields; a new mapping has none yet.
+        fields = list(mapping.fields.filter(enabled=True)) if mapping.pk else []
+        return self.object_test(request, mapping, fields)
+
+
+class MappingFieldLiveTestView(LiveTestView):
+    model = MappingField
+    form_class = forms.MappingFieldForm
+    needed = ('mapping', 'target', 'value_path', 'transform', 'expression', 'replacement', 'table')
+
+    def post(self, request):
+        field, form = self.bind(request)
+        errors = self.form_errors(form)
+        if errors:
+            return self.respond(request, errors=errors)
+        mapping = field.mapping
+        if not Mapping.objects.restrict(request.user, 'view').filter(pk=mapping.pk).exists():
+            raise PermissionDenied
+        return self.object_test(request, mapping, [field])

@@ -14,6 +14,7 @@ How the plugin works and why, for anyone changing it.
 | `transforms.py` | Regex, lookup table and Jinja2 transforms |
 | `targets.py` | Reading, converting, validating and bulk-writing NetBox fields |
 | `engine.py` | A run from fetch to report; the ownership rule; applying a dry run |
+| `livetest.py` | Live tests from the edit forms: endpoint, authentication, one object |
 | `jobs.py`, `signals.py` | Background jobs and schedules |
 | `retention.py` | Run history limits, clean-up of ownership rows |
 
@@ -96,6 +97,30 @@ the current and new value, and these rows are never cut by
 `max_report_rows`. Apply re-reads each object with the row locked and writes
 only where the field still holds the dry run's current value; otherwise the
 row becomes `stale`. Apply does not call the API again.
+
+## Live tests
+
+The source, mapping and field edit pages use their own templates
+(`*_edit.html`) that extend NetBox's `generic/object_edit.html` and add a
+test panel below the form. Its buttons post the whole edit form plus the
+panel's inputs with htmx to `LiveTestView` subclasses, which bind the data
+to the same form class and test `form.instance` without saving it. Only
+errors on the fields a test needs stop it (a duplicate name does not). A
+secret typed into the form is passed to `http.Client(secret=...)`, so it is
+tested before it is stored.
+
+- Endpoint: one request (first page), no retries.
+- Authentication: the request with credentials, then, if it succeeded, once
+  without. `FetchError.status` and `FetchError.token` tell a rejected token
+  request, a 401 and a 403 apart.
+- Object: the engine's own `_match_bulk` / `_match_per_object`,
+  `_desired_values` and `_write` with an unsaved dry-run `Run`, on a
+  queryset of that one object. Nothing is saved: the report is never stored
+  and a dry run writes no ownership rows. A bulk source still fetches its
+  whole list, because matching needs it.
+
+Live tests need `run_source` plus change permission on the object (or add
+permission for a new one).
 
 ## Secrets
 

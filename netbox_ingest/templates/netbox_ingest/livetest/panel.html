@@ -1,0 +1,55 @@
+{% load i18n %}
+{% comment %}
+The live test panel below an edit form. Its buttons post the form's current
+values (saved or not) plus the inputs here, and show the answer below.
+Context: object, test_url, kind ('source' or 'object').
+{% endcomment %}
+<div class="card mt-4" id="live-test">
+  <h2 class="card-header">{% trans "Live Test" %}</h2>
+  <div class="card-body">
+    <p class="text-muted">
+      {% if kind == 'source' %}
+        {% trans "Calls the API with the values in the form above, saved or not. The first page only; nothing is written." %}
+      {% else %}
+        {% trans "Runs one NetBox object through fetch, match and transform with the values in the form above, and shows what a run would do. Nothing is written." %}
+      {% endif %}
+    </p>
+    <div id="live-test-inputs" class="row g-2 align-items-end">
+      <input type="hidden" name="_test_pk" value="{{ object.pk|default:'' }}">
+      {% if kind == 'source' %}
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="live-test-key">{% trans "Object key" %}</label>
+          <input type="text" class="form-control" name="_test_key" id="live-test-key" placeholder="{% trans 'Per object: fills {key}' %}">
+        </div>
+        <div class="col-auto">
+          <button type="button" class="btn btn-outline-primary"
+                  hx-post="{{ test_url }}" hx-include="form.object-edit, #live-test-inputs" hx-vals='{"_test": "endpoint"}'
+                  hx-target="#live-test-result" hx-swap="innerHTML" hx-indicator="#live-test-spinner">
+            <i class="mdi mdi-lan-connect"></i> {% trans "Test Endpoint" %}
+          </button>
+          <button type="button" class="btn btn-outline-primary"
+                  hx-post="{{ test_url }}" hx-include="form.object-edit, #live-test-inputs" hx-vals='{"_test": "auth"}'
+                  hx-target="#live-test-result" hx-swap="innerHTML" hx-indicator="#live-test-spinner">
+            <i class="mdi mdi-key-outline"></i> {% trans "Test Authentication" %}
+          </button>
+        </div>
+      {% else %}
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="live-test-object">{% trans "NetBox object" %}</label>
+          <input type="text" class="form-control" name="_test_object" id="live-test-object" placeholder="{% trans 'Its key, or #ID' %}">
+        </div>
+        <div class="col-auto">
+          <button type="button" class="btn btn-outline-primary"
+                  hx-post="{{ test_url }}" hx-include="form.object-edit, #live-test-inputs"
+                  hx-target="#live-test-result" hx-swap="innerHTML" hx-indicator="#live-test-spinner">
+            <i class="mdi mdi-flask-outline"></i> {% trans "Test Against Object" %}
+          </button>
+        </div>
+      {% endif %}
+      <div class="col-auto">
+        <span id="live-test-spinner" class="htmx-indicator spinner-border spinner-border-sm text-secondary" role="status"></span>
+      </div>
+    </div>
+    <div id="live-test-result" class="mt-3" aria-live="polite"></div>
+  </div>
+</div>

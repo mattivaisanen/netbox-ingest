@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+New:
+
+- Live tests in the source, mapping and field forms, on the values being
+  edited (saved or not): test the endpoint (status, time, size, first
+  record and its paths), test the authentication (clear messages for
+  rejected credentials, 401 and 403, and a warning when the API answers
+  without credentials too), and test a mapping or a field against one
+  NetBox object to see what a run would write. Nothing is written.
+- The source Test page also shows the response size and content type, and
+  says when nothing is found at the records path.
+
 ## 0.1.0 (2026-11-09)
 
 New:

@@ -1,0 +1,19 @@
+{% load i18n %}
+{% comment %}Authentication test result (livetest.authentication()). Context: result.{% endcomment %}
+<div class="alert {% if result.ok %}alert-success{% elif result.ok is False %}alert-danger{% else %}alert-warning{% endif %} mb-2">
+  <i class="mdi {% if result.ok %}mdi-check-circle{% elif result.ok is False %}mdi-close-circle{% else %}mdi-help-circle{% endif %}"></i>
+  {{ result.message }}
+  {% if result.detail %}<div class="small font-monospace mt-1 text-break">{{ result.detail }}</div>{% endif %}
+</div>
+{% if result.steps %}
+  <ul class="list-unstyled mb-2">
+    {% for level, message in result.steps %}
+      <li><i class="mdi {% if level == 'success' %}mdi-check text-success{% else %}mdi-alert text-warning{% endif %}"></i> {{ message }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
+<table class="table table-hover attr-table">
+  <tr><th scope="row">{% trans "Authentication" %}</th><td>{{ result.auth_type }}</td></tr>
+  {% if result.url %}<tr><th scope="row">{% trans "URL" %}</th><td><code>{{ result.url }}</code></td></tr>{% endif %}
+  {% if result.status_code %}<tr><th scope="row">{% trans "Status" %}</th><td>HTTP {{ result.status_code }}{% if result.seconds is not None %} &middot; {{ result.seconds }} s{% endif %}</td></tr>{% endif %}
+</table>
