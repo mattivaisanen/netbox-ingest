@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netbox-ingest"
+version = "0.1.0"
+description = "Pull data from JSON APIs into NetBox fields, with matching, transforms, dry runs and ownership tracking."
+requires-python = ">=3.10"
+license = "Apache-2.0"
+readme = "README.md"
+authors = [{ name = "Matti" }]
+# No runtime dependencies beyond NetBox: Django, requests, Jinja2 and
+# cryptography are already installed with NetBox. NetBox versions are
+# enforced at runtime by min_version in netbox_ingest/__init__.py.
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["netbox_ingest*"]
+
+[tool.setuptools.package-data]
+netbox_ingest = [
+    "templates/netbox_ingest/*.html",
+    "templates/netbox_ingest/**/*.html",
+]

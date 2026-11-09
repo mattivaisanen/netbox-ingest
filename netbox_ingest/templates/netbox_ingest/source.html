@@ -1,0 +1,107 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block extra_controls %}
+  {% if can_run %}
+    <a href="{% url 'plugins:netbox_ingest:source_test' pk=object.pk %}" class="btn btn-outline-secondary">
+      <i class="mdi mdi-flask-outline"></i> {% trans "Test" %}
+    </a>
+    <form action="{% url 'plugins:netbox_ingest:source_run' pk=object.pk %}" method="post" class="d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="dry_run" value="true">
+      <button type="submit" class="btn btn-primary"><i class="mdi mdi-eye-outline"></i> {% trans "Dry Run" %}</button>
+    </form>
+    <form action="{% url 'plugins:netbox_ingest:source_run' pk=object.pk %}" method="post" class="d-inline">
+      {% csrf_token %}
+      <input type="hidden" name="dry_run" value="false">
+      <button type="submit" class="btn btn-warning" title="{% trans 'Fetch and write without a dry run' %}">
+        <i class="mdi mdi-play"></i> {% trans "Run Now" %}
+      </button>
+    </form>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Source" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
+        <tr><th scope="row">{% trans "Fetch mode" %}</th><td>{{ object.get_fetch_mode_display }}</td></tr>
+        <tr><th scope="row">{% trans "Request" %}</th><td><code>{{ object.method }} {{ object.url }}</code></td></tr>
+        <tr><th scope="row">{% trans "Records path" %}</th><td>{% if object.records_path %}<code>{{ object.records_path }}</code>{% else %}<span class="text-muted">{% trans "the response itself" %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Format" %}</th><td>{{ object.format|upper }}</td></tr>
+        <tr><th scope="row">{% trans "Verify TLS" %}</th><td>{% checkmark object.verify_tls %}</td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Authentication" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Type" %}</th><td>{{ object.get_auth_type_display }}</td></tr>
+        {% if object.auth_username %}<tr><th scope="row">{% trans "Username / client ID" %}</th><td>{{ object.auth_username }}</td></tr>{% endif %}
+        {% if object.auth_name %}<tr><th scope="row">{% trans "Header / parameter" %}</th><td><code>{{ object.auth_name }}</code></td></tr>{% endif %}
+        {% if object.token_url %}<tr><th scope="row">{% trans "Token URL" %}</th><td><code>{{ object.token_url }}</code></td></tr>{% endif %}
+        <tr><th scope="row">{% trans "Secret" %}</th><td>
+          {% if object.secret_env %}{% trans "environment variable" %} <code>{{ object.secret_env }}</code>
+          {% elif object.secret_ciphertext %}<i class="mdi mdi-lock"></i> {% trans "stored encrypted" %}
+          {% else %}<span class="text-muted">{% trans "none" %}</span>{% endif %}
+        </td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Pagination and Lookup" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Pagination" %}</th><td>{{ object.get_pagination_display }}
+          {% if object.page_size %} &middot; {% blocktrans with n=object.page_size %}{{ n }} per page{% endblocktrans %}{% endif %}
+          {% if object.next_path %} &middot; <code>{{ object.next_path }}</code>{% endif %}
+          {% if object.page_param %} &middot; <code>{{ object.page_param }}</code>{% endif %}
+          {% if object.size_param %} / <code>{{ object.size_param }}</code>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Lookup" %}</th><td>
+          {% if object.lookup_url %}<code>{{ object.lookup_url }}</code><br>
+            <small>{% trans "key" %} <code>{{ object.lookup_key_path }}</code> &rarr; <code>{{ object.lookup_value_path }}</code></small>
+          {% else %}<span class="text-muted">{% trans "none" %}</span>{% endif %}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Schedule and Limits" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Runs" %}</th><td>
+          {% if object.interval %}{% blocktrans with n=object.interval %}every {{ n }} minutes{% endblocktrans %}
+            {% if next_run %}<span class="text-muted">&middot; {% trans "next" %} {{ next_run|isodatetime:"minutes" }}</span>
+            {% elif not object.enabled %}<span class="text-muted">&middot; {% trans "paused (disabled)" %}</span>{% endif %}
+          {% else %}<span class="text-muted">{% trans "manually only" %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Requests per second" %}</th><td>{{ object.requests_per_second|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Parallel requests" %}</th><td>{{ object.concurrency|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Timeout" %}</th><td>{% if object.timeout %}{{ object.timeout }} s{% else %}{{ ''|placeholder }}{% endif %}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <h2 class="card-header">{% trans "Mappings" %}
+    {% if perms.netbox_ingest.add_mapping %}
+      <div class="card-actions">
+        <a href="{% url 'plugins:netbox_ingest:mapping_add' %}?source={{ object.pk }}&return_url={{ object.get_absolute_url }}" class="btn btn-ghost-primary btn-sm">
+          <i class="mdi mdi-plus-thick"></i> {% trans "Add Mapping" %}
+        </a>
+      </div>
+    {% endif %}
+  </h2>
+  <div class="table-responsive">{% render_table mappings_table 'inc/table.html' %}</div>
+</div>
+<div class="card">
+  <h2 class="card-header">{% trans "Recent Runs" %}
+    <div class="card-actions">
+      <a href="{% url 'plugins:netbox_ingest:run_list' %}?source_id={{ object.pk }}" class="btn btn-ghost-primary btn-sm">{% trans "All runs" %}</a>
+    </div>
+  </h2>
+  <div class="table-responsive">{% render_table runs_table 'inc/table.html' %}</div>
+</div>
+{% endblock %}

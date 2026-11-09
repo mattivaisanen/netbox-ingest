@@ -1,0 +1,68 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block extra_controls %}
+  {% if perms.netbox_ingest.add_mappingfield %}
+    <a href="{% url 'plugins:netbox_ingest:mappingfield_add' %}?mapping={{ object.pk }}&return_url={{ object.get_absolute_url }}" class="btn btn-primary">
+      <i class="mdi mdi-plus-thick"></i> {% trans "Add Field" %}
+    </a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Mapping" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Source" %}</th><td>{{ object.source|linkify }}</td></tr>
+        <tr><th scope="row">{% trans "Name" %}</th><td>{{ object.name }}</td></tr>
+        <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
+        <tr><th scope="row">{% trans "Weight" %}</th><td>{{ object.weight }}</td></tr>
+        <tr><th scope="row">{% trans "Description" %}</th><td>{{ object.description|placeholder }}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Objects" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Object type" %}</th><td>{{ object.object_type.app_label }} | {{ object.model|meta:"verbose_name"|default:object.object_type.model }}</td></tr>
+        <tr><th scope="row">{% trans "Filter" %}</th><td>{% if object.object_filter %}<code>{{ object.object_filter|json }}</code>{% else %}<span class="text-muted">{% trans "all objects" %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Objects now" %}</th><td>
+          {% if object_count is None %}<span class="text-danger">{% trans "the filter does not work" %}</span>
+          {% elif list_url %}<a href="{{ list_url }}">{{ object_count }}</a>{% else %}{{ object_count }}{% endif %}</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Matching" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Object key" %}</th><td><code>{{ object.object_key_field }}</code>{% if object.object_key_regex %} ~ <code>{{ object.object_key_regex }}</code>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Record key" %}</th><td>{% if object.record_key_path %}<code>{{ object.record_key_path }}</code>{% if object.record_key_regex %} ~ <code>{{ object.record_key_regex }}</code>{% endif %}{% else %}<span class="text-muted">{% trans "the response belongs to its object" %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Ignore case" %}</th><td>{% checkmark object.ignore_case %}</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-header">{% trans "Ownership" %}</h2>
+      <div class="card-body">
+        <p>{% blocktrans count n=owned_count %}The plugin wrote {{ n }} value that it still answers for.{% plural %}The plugin wrote {{ n }} values that it still answers for.{% endblocktrans %}
+          {% trans "It updates these when the API changes, unless someone edits them in NetBox." %}</p>
+        {% if owned_count and perms.netbox_ingest.change_mapping %}
+          <form action="{% url 'plugins:netbox_ingest:mapping_forget' pk=object.pk %}" method="post">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-danger btn-sm" title="{% trans 'Values stay in NetBox; the plugin stops updating them' %}">
+              <i class="mdi mdi-link-off"></i> {% trans "Forget Written Values" %}
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+<div class="card">
+  <h2 class="card-header">{% trans "Fields" %}</h2>
+  <div class="table-responsive">{% render_table fields_table 'inc/table.html' %}</div>
+</div>
+{% endblock %}
