@@ -1,0 +1,98 @@
+name: Test
+
+# Pull requests and manual runs only, to save Actions minutes.
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported release and the latest tested one.
+        netbox: [v4.7.0, v4.7.4]
+    env:
+      NETBOX_REF: ${{ matrix.netbox }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: netbox
+          POSTGRES_PASSWORD: netbox
+          POSTGRES_DB: netbox
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out this plugin
+        uses: actions/checkout@v4
+        with:
+          path: plugin
+
+      - name: Check out NetBox
+        uses: actions/checkout@v4
+        with:
+          repository: netbox-community/netbox
+          ref: ${{ env.NETBOX_REF }}
+          path: netbox
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install NetBox + plugin
+        run: |
+          pip install --upgrade pip
+          pip install -r netbox/requirements.txt
+          pip install -e plugin
+
+      - name: Configure NetBox
+        run: |
+          cat > netbox/netbox/netbox/configuration.py << PYEOF
+          ALLOWED_HOSTS = ['*']
+          DATABASES = {
+              'default': {
+                  'ENGINE': 'django.db.backends.postgresql',
+                  'NAME': 'netbox', 'USER': 'netbox', 'PASSWORD': 'netbox',
+                  'HOST': 'localhost', 'PORT': '5432',
+              },
+          }
+          REDIS = {
+              'tasks': {'HOST': 'localhost', 'PORT': 6379, 'DATABASE': 0, 'SSL': False},
+              'caching': {'HOST': 'localhost', 'PORT': 6379, 'DATABASE': 1, 'SSL': False},
+          }
+          SECRET_KEY = 'ci-only-secret-key-' + 'x' * 40
+          API_TOKEN_PEPPERS = {1: 'ci-only-pepper-' + 'y' * 40}
+          PLUGINS = ['netbox_ingest']
+          PYEOF
+
+      - name: Run migrations
+        working-directory: netbox/netbox
+        run: python manage.py migrate
+
+      - name: Collect static files
+        working-directory: netbox/netbox
+        run: python manage.py collectstatic --no-input
+
+      - name: Check for migration drift
+        working-directory: netbox/netbox
+        run: python manage.py makemigrations netbox_ingest --check --dry-run
+
+      - name: Run plugin test suite
+        working-directory: netbox/netbox
+        run: python manage.py test netbox_ingest

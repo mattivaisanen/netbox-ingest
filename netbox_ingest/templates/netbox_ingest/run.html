@@ -1,0 +1,84 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load render_table from django_tables2 %}
+{% load i18n %}
+
+{% block subtitle %}
+  <div class="text-secondary d-flex flex-wrap align-items-center gap-2 mb-2">
+    {% badge object.get_status_display bg_color=object.get_status_color %}
+    {% if object.dry_run %}<span class="badge text-bg-cyan">{% trans "dry run" %}</span>{% endif %}
+    <a href="{{ object.source.get_absolute_url }}">{{ object.source }}</a>
+    <span>&middot; {{ object.get_trigger_display }}{% if object.user %} {% trans "by" %} {{ object.user }}{% endif %}, {{ object.created|isodatetime:"minutes" }}</span>
+    {% if object.duration %}<span>&middot; {% blocktrans with s=object.duration.total_seconds|floatformat:1 %}{{ s }} s{% endblocktrans %}</span>{% endif %}
+    {% if object.applied %}<span>&middot; {% blocktrans with who=object.applied_by when=object.applied|isodatetime:"minutes" %}applied by {{ who }}, {{ when }}{% endblocktrans %}</span>{% endif %}
+  </div>
+{% endblock %}
+
+{% block extra_controls %}
+  {% if can_apply %}
+    <form action="{% url 'plugins:netbox_ingest:run_apply' pk=object.pk %}" method="post" class="d-inline">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-primary" title="{% trans 'Write the planned values that NetBox still holds as the dry run saw them' %}">
+        <i class="mdi mdi-check-bold"></i> {% trans "Apply" %}
+      </button>
+    </form>
+  {% endif %}
+  {% if object.job_id %}
+    <a href="{% url 'core:job_list' %}?job_id={{ object.job_id }}" class="btn btn-outline-secondary"><i class="mdi mdi-console"></i> {% trans "Job" %}</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+{% if active %}
+  <div class="alert alert-info"><i class="mdi mdi-progress-clock"></i>
+    {% trans "This run is queued or running in the background. Reload the page to see its result." %}</div>
+{% endif %}
+{% if object.error %}
+  <div class="alert alert-danger"><i class="mdi mdi-alert"></i> {{ object.error }}</div>
+{% endif %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Result" %}</h2>
+      <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
+          <a href="?" class="badge text-bg-{% if not current_status %}primary{% else %}secondary{% endif %} text-decoration-none">{% trans "All rows" %} {{ stored }}</a>
+          {% for status, label, color, count in chips %}
+            <a href="?status={{ status }}" class="badge text-bg-{{ color }} text-decoration-none{% if status in current_status %} border border-2 border-dark{% endif %}">{{ label }} {{ count }}</a>
+          {% endfor %}
+        </div>
+        <p class="text-muted small mt-3 mb-0">
+          {% blocktrans with m=matched u=unchanged %}{{ m }} objects matched; {{ u }} field values were already up to date (not listed).{% endblocktrans %}
+          {% if object.dry_run and not object.applied %}{% trans "Nothing was written: apply to write the planned values." %}{% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Requests" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Requests" %}</th><td>{{ object.stats.requests|default:0 }}{% if object.stats.retries %} ({% blocktrans with n=object.stats.retries %}{{ n }} retried{% endblocktrans %}){% endif %}{% if object.stats.errors %} &middot; <span class="text-danger">{% blocktrans with n=object.stats.errors %}{{ n }} errors{% endblocktrans %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Pages" %}</th><td>{{ object.stats.pages|default:0 }}</td></tr>
+        <tr><th scope="row">{% trans "Records" %}</th><td>{{ object.stats.records|placeholder }}</td></tr>
+        <tr><th scope="row">{% trans "Received" %}</th><td>{{ object.stats.bytes|default:0|filesizeformat }}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% if object.log %}
+<div class="card">
+  <h2 class="card-header">{% trans "Log" %}</h2>
+  <table class="table table-sm mb-0">
+    {% for entry in object.log %}
+      <tr><td class="text-nowrap" style="width: 6em"><span class="badge text-bg-{% if entry.level == 'error' %}red{% elif entry.level == 'warning' %}orange{% else %}secondary{% endif %}">{{ entry.level }}</span></td><td>{{ entry.message }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+<div class="card">
+  <h2 class="card-header">{% trans "Report" %}</h2>
+  <div class="table-responsive">{% render_table items_table 'inc/table.html' %}</div>
+</div>
+{% include 'inc/paginator.html' with paginator=items_table.paginator page=items_table.page %}
+{% endblock %}

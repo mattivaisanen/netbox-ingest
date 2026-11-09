@@ -1,0 +1,35 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load i18n %}
+
+{% block content %}
+<div class="row mb-3">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Field" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Mapping" %}</th><td>{{ object.mapping|linkify }}</td></tr>
+        <tr><th scope="row">{% trans "NetBox field" %}</th><td><code>{{ object.target }}</code>
+          {% if not object.is_custom_field %}<span class="badge text-bg-orange" title="{% trans 'A built-in NetBox field. Check a dry run before writing.' %}">{% trans "core field" %}</span>{% endif %}</td></tr>
+        <tr><th scope="row">{% trans "Value path" %}</th><td><code>{{ object.value_path }}</code></td></tr>
+        <tr><th scope="row">{% trans "Enabled" %}</th><td>{% checkmark object.enabled %}</td></tr>
+        <tr><th scope="row">{% trans "Overwrites values not written by the plugin" %}</th><td>{% checkmark object.overwrite_foreign %}</td></tr>
+        <tr><th scope="row">{% trans "Values the plugin answers for" %}</th><td>{{ owned_count }}</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Transform" %}</h2>
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "Type" %}</th><td>{{ object.get_transform_display }}</td></tr>
+        {% if object.transform == 'regex' or object.transform == 'jinja' %}
+          <tr><th scope="row">{% trans "Expression" %}</th><td><pre class="mb-0">{{ object.expression }}</pre></td></tr>
+        {% endif %}
+        {% if object.transform == 'regex' %}<tr><th scope="row">{% trans "Replacement" %}</th><td><code>{{ object.replacement|placeholder }}</code></td></tr>{% endif %}
+        {% if object.transform == 'lookup' %}<tr><th scope="row">{% trans "Table" %}</th><td><pre class="mb-0">{{ object.table|json }}</pre></td></tr>{% endif %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

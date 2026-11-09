@@ -1,0 +1,54 @@
+{% extends 'generic/object.html' %}
+{% load helpers %}
+{% load i18n %}
+
+{% block title %}{% trans "Test" %} {{ object }}{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2 class="card-header">{% trans "Test Request" %}</h2>
+  <div class="card-body">
+    <p class="text-muted">{% trans "Calls the API once and shows the response. Nothing is written." %}</p>
+    {% if object.fetch_mode == 'per-object' %}
+      <form method="get" class="row g-2 align-items-end mb-3">
+        <div class="col-auto">
+          <label class="form-label" for="key">{% trans "Object key" %}</label>
+          <input type="text" class="form-control" name="key" id="key" value="{{ key }}" placeholder="{% trans 'e.g. a device name' %}">
+        </div>
+        <div class="col-auto"><button type="submit" class="btn btn-primary">{% trans "Send" %}</button></div>
+      </form>
+    {% endif %}
+    {% if error %}
+      <div class="alert alert-danger mb-0"><i class="mdi mdi-alert"></i> {{ error }}</div>
+    {% elif url %}
+      <table class="table table-hover attr-table">
+        <tr><th scope="row">{% trans "URL" %}</th><td><code>{{ url }}</code></td></tr>
+        <tr><th scope="row">{% trans "Status" %}</th><td>HTTP {{ status_code }} &middot; {{ seconds }} s</td></tr>
+        {% if lookup_count is not None %}<tr><th scope="row">{% trans "Lookup" %}</th><td>{% blocktrans with n=lookup_count %}{{ n }} records{% endblocktrans %}; {% trans "this key gives" %} <code>{{ lookup_value|placeholder }}</code></td></tr>{% endif %}
+        <tr><th scope="row">{% trans "Records" %}</th><td>{{ record_count }} {% if paging_note %}<span class="text-muted">({{ paging_note }})</span>{% endif %}</td></tr>
+      </table>
+    {% endif %}
+  </div>
+</div>
+{% if sample %}
+<div class="row">
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "First Record" %}</h2>
+      <div class="card-body"><pre class="mb-0" style="max-height: 40rem; overflow: auto">{{ sample }}</pre></div>
+    </div>
+  </div>
+  <div class="col col-12 col-xl-6">
+    <div class="card">
+      <h2 class="card-header">{% trans "Paths in the Record" %}</h2>
+      <table class="table table-sm table-hover mb-0">
+        <tr><th>{% trans "Path" %}</th><th>{% trans "Value" %}</th></tr>
+        {% for path, value in paths %}
+          <tr><td><code class="user-select-all">{{ path }}</code></td><td class="text-break">{{ value|truncatechars:80 }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
